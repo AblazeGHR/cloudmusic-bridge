@@ -1,7 +1,10 @@
 @echo off
 setlocal
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$c=Get-Content -Raw '%~f0'; $s=$c.IndexOf('##PS'); Invoke-Expression ($c.Substring($s+5))"
-goto :EOF
+for /f "delims=:" %%n in ('findstr /n /b "##PS" "%~f0"') do set SKIP=%%n
+set /a SKIP+=0
+powershell -NoProfile -Command "(Get-Content '%~f0' | Select-Object -Skip %SKIP%) | Set-Content -Path '%TEMP%\ncm_uninstall.ps1' -Encoding UTF8"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\ncm_uninstall.ps1"
+del "%TEMP%\ncm_uninstall.ps1" 2>nul
 ##PS
 # ============================================================
 # netEasycloudOpener - Uninstaller
