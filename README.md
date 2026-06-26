@@ -47,16 +47,16 @@ Windows 上，`.ncm` 文件无法通过双击直接播放，只有**拖拽文件
 > 安装后，如果你通过"属性 → 打开方式"修改了任何文件的默认程序，**必须重新运行 `install.bat`**，否则劫持会失效（本质上是 Windows 的文件关联解析路径发生了变化，不再经过被劫持的注册表项）。
 
 ### 安装步骤
-
-1. 将 `install.bat` 放到你希望安装的目录（推荐 `D:\Tools\cloudmusic-bridge\`）
-2. **双击运行** `install.bat`
-3. 安装器将自动执行以下操作，全程无需干预：
+1. 直接从code下载或从[release](https://github.com/AblazeGHR/cloudmusic-bridge/releases/tag/v1.0.0)下载包含install.bat和uninstall.bat的zip
+2. 将 `install.bat` 放到你希望安装的目录（推荐 `D:\Tools\cloudmusic-bridge\`）
+3. **双击运行** `install.bat`
+4. 安装器将自动执行以下操作，全程无需干预：
    - 自动检测网易云音乐安装路径
    - 生成 `DropHelper.exe`、`ncm-launcher.ps1` 等运行文件
    - 注册 `.ncm` 文件关联
    - 设置开机自修复
    - 验证安装完整性
-4. 看到 "Installation Complete!" 即完成
+5. 看到 "Installation Complete!" 即完成
 
 ### 安装器做了什么
 
