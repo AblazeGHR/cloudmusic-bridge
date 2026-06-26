@@ -2,88 +2,62 @@
 
 解决 Windows 上双击/右键 `.ncm` 文件时网易云音乐只打开软件不播放的问题。
 
-## 问题
+## 快速使用
 
-网易云音乐是单实例应用。双击 `.ncm` 文件时，Windows 通过命令行参数传递文件路径——新进程检测到已有实例后通过 IPC 转发，但这条 IPC 链路存在 bug，结果只激活窗口不加载文件。
+1. 下载 `install.bat`
+2. 双击运行（会**自动检测**网易云音乐的安装位置）
+3. 完成，双击任意 `.ncm` 文件即可播放
 
-拖拽文件到窗口却能正常播放，因为走的是 `WM_DROPFILES` 消息，完全不同的代码路径。
+如需卸载，运行 `uninstall.bat`。
 
-```
-双击 .ncm → cloudmusic.exe "%1" → IPC 转发 → ❌ 失败
-拖拽 .ncm → WM_DROPFILES 消息      → ✅ 正常
-```
+## 原理
 
-## 方案
-
-劫持文件关联入口，用 `DropHelper.exe` 向网易云音乐窗口发送 `WM_DROPFILES` 消息，模拟拖拽。
+网易云音乐是单实例应用。双击 `.ncm` 文件时通过命令行传参 → IPC 转发有 bug → 只开窗口不播放。
+拖拽文件到窗口走 `WM_DROPFILES` 消息 → 正常。本工具模拟拖拽。
 
 ```
-双击 .ncm → registry 拦截 → ncm-launcher.ps1 → DropHelper.exe → WM_DROPFILES → ✅
+双击 .ncm → install.bat 劫持文件关联 → DropHelper.exe 发送 WM_DROPFILES → 播放
 ```
 
 ## 文件
 
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `install.bat` | 发布 | 一键安装器（自包含，无需额外文件） |
+| `uninstall.bat` | 发布 | 一键卸载器 |
+| `DropHelper.cs` | 源码 | DropHelper.exe 的 C# 源码 |
+
+安装后生成（由 install.bat 自动创建）：
+
 | 文件 | 说明 |
 |------|------|
-| `ncm-launcher.ps1` | PowerShell 启动器，调度 DropHelper |
-| `DropHelper.exe` | 微型工具，向目标窗口发送 WM_DROPFILES |
-| `DropHelper.cs` | DropHelper 的 C# 源码 |
-| `register-handler.bat` | 一键安装注册 |
-| `uninstall.bat` | 一键卸载恢复 |
+| `DropHelper.exe` | WM_DROPFILES 发送工具 |
+| `ncm-launcher.ps1` | PowerShell 调度脚本 |
+| `auto-repair.ps1` | 开机自修复 |
+| `startup-repair.bat` | 开机启动入口 |
 
-## 安装
+## 安装细节
 
-1. 确保 `ncm-launcher.ps1` 与 `DropHelper.exe` 在同一目录
-2. **管理员身份**运行 `register-handler.bat`
-3. 选择 `[1] Install Fix`
-4. 完成，双击任意 `.ncm` 即可播放
+`install.bat` 自动执行以下步骤：
+
+1. **检测网易云音乐位置** — 从现有文件关联提取（右键"打开方式"中选择的路径）→ 搜索常见安装路径 → 从运行中进程探测 → 让用户手动选择
+2. **生成运行文件** — 将嵌入的 DropHelper.exe (base64) 和脚本写入安装目录
+3. **注册文件关联** — 劫持 `Applications\cloudmusic.exe` 的 Shell\Open\Command
+4. **设置自修复** — 放入 Windows 启动文件夹，检测云音乐更新覆盖后自动修复
+5. **验证** — 检查所有文件和注册表项
 
 ## 卸载
 
-管理员运行 `uninstall.bat`，恢复原始文件关联。
+运行 `uninstall.bat`：
+- 恢复原始文件关联
+- 移除自修复启动项
+- 清理注册表
 
-## 移植
+## 自修复机制
 
-1. 复制 `ncm-launcher.ps1`、`DropHelper.exe`、`register-handler.bat` 到目标电脑同一目录
-2. 若网易云音乐装在非标准路径，编辑 `ncm-launcher.ps1` 中 `$searchPaths` 数组加入
-3. 管理员运行 `register-handler.bat`
-4. 完成
+网易云音乐启动时可能重新注册 `Applications\cloudmusic.exe` 的命令行，覆盖我们的劫持。
 
-## 如何工作
-
-### 注册表
-
-修改三处：
-
-```
-HKCU\Software\Classes\.ncm → NCMLauncher.ncm
-
-HKCU\Software\Classes\NCMLauncher.ncm\Shell\Open\Command
-  → powershell.exe ... ncm-launcher.ps1 "%1"
-
-HKCU\Software\Classes\Applications\cloudmusic.exe\Shell\Open\Command
-  → powershell.exe ... ncm-launcher.ps1 "%1"
-```
-
-第三处是关键——`UserChoice`（Windows 记住的"默认打开方式"）指向 `Applications\cloudmusic.exe`，且有哈希保护无法修改。我们不改 UserChoice 本身，而是替换它指向的 ProgID 的命令。
-
-### 启动器流程
-
-```
-1. 接收文件路径
-2. 自动查找 cloudmusic.exe（常见路径 + 运行中进程）
-3. 若未运行 → 启动并等待窗口就绪（最多 20s）
-4. 调用 DropHelper.exe 发送 WM_DROPFILES
-5. 最多重试 3 次
-```
-
-### DropHelper.exe
-
-```
-1. 找到 cloudmusic 主窗口句柄
-2. 在全局内存构造 DROPFILES 结构（含文件路径）
-3. PostMessage(WM_DROPFILES) → 完全等效于拖拽
-```
+`auto-repair.ps1` 在每次 Windows 开机时静默运行，检测劫持是否被覆盖并自动修复。对性能无影响（仅一次注册表读取）。
 
 ## 依赖
 

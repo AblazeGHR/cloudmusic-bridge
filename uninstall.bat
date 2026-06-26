@@ -1,83 +1,92 @@
 @echo off
-chcp 65001 >nul
-setlocal EnableDelayedExpansion
+setlocal
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$c=Get-Content -Raw '%~f0'; $s=$c.IndexOf('##PS'); Invoke-Expression ($c.Substring($s+5))"
+goto :EOF
+##PS
+# ============================================================
+# netEasycloudOpener - Uninstaller
+# ============================================================
 
-:: Check admin (not strictly required for HKCU changes, but good practice)
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo Note: Some operations may require admin rights.
-    echo Consider right-clicking and selecting "Run as administrator"
-    echo.
-)
+$ErrorActionPreference = "SilentlyContinue"
+$Host.UI.RawUI.WindowTitle = "netEasycloudOpener Uninstaller"
 
-set "SCRIPT_DIR=%~dp0"
+Write-Host "============================================"
+Write-Host "  netEasycloudOpener - Uninstaller"
+Write-Host "============================================"
+Write-Host ""
 
-echo =============================================
-echo   NCM File Launcher - UNINSTALL
-echo =============================================
-echo.
-echo This will restore ALL changes made by the fix:
-echo   [a] Restore HKCU\...\Applications\cloudmusic.exe command
-echo   [b] Remove HKCU\...\Classes\NCMLauncher.ncm
-echo   [c] Restore original .ncm file association
-echo.
-echo Press any key to continue, or Ctrl+C to cancel...
-pause >nul
+# ---- Restore Applications\cloudmusic.exe ----
+Write-Host "[1/4] Restoring original cloudmusic.exe command..."
 
-echo.
+# Find cloudmusic.exe from running process or common paths
+$cloudExe = $null
+$proc = Get-Process -Name "cloudmusic" -ErrorAction SilentlyContinue | Where-Object { $_.Path } | Select-Object -First 1
+if ($proc) { $cloudExe = $proc.Path }
 
-:: [a] Restore Applications\cloudmusic.exe\shell\open\command
-echo [a] Restoring cloudmusic.exe command...
-reg add "HKCU\Software\Classes\Applications\cloudmusic.exe\Shell\Open\Command" /ve /d "\"D:\software\CloudMusic\cloudmusic.exe\" \"%%1\"" /f >nul 2>&1
-echo     Done.
+if (-not $cloudExe) {
+    $search = @(
+        "$env:LOCALAPPDATA\NetEase\CloudMusic\cloudmusic.exe",
+        "${env:ProgramFiles(x86)}\Netease\CloudMusic\cloudmusic.exe",
+        "$env:ProgramFiles\Netease\CloudMusic\cloudmusic.exe"
+    )
+    foreach ($p in $search) {
+        if (Test-Path $p) { $cloudExe = $p; break }
+    }
+}
 
-:: [b] Remove our ProgID
-echo [b] Removing NCMLauncher.ncm...
-reg delete "HKCU\Software\Classes\NCMLauncher.ncm" /f >nul 2>&1
-echo     Done.
+if ($cloudExe) {
+    $origCmd = "`"$cloudExe`" `"%1`""
+    Set-ItemProperty "HKCU:\Software\Classes\Applications\cloudmusic.exe\Shell\Open\Command" -Name "(default)" -Value $origCmd
+    Write-Host "  Restored to: $origCmd"
+} else {
+    # Just remove our custom entry
+    Remove-Item "HKCU:\Software\Classes\Applications\cloudmusic.exe" -Recurse -Force
+    Write-Host "  Removed custom entry (cloudmusic not found to restore)"
+}
 
-:: [c] Restore .ncm association
-echo [c] Restoring .ncm file association...
+# ---- Remove NCMLauncher.ncm ----
+Write-Host "[2/4] Removing launcher ProgID..."
+Remove-Item "HKCU:\Software\Classes\NCMLauncher.ncm" -Recurse -Force
+Write-Host "  Removed"
 
-:: Get backed-up original ProgID
-set "RESTORE="
-for /f "tokens=2*" %%a in ('reg query "HKCU\Software\Classes\.ncm" /v "OriginalProgID" 2^>nul ^| find /i "OriginalProgID"') do set "RESTORE=%%b"
-if "!RESTORE!"=="" (
-    for /f "tokens=2*" %%a in ('reg query "HKCU\Software\Classes\.ncm" /v "NCMLauncher_OriginalProgID" 2^>nul ^| find /i "NCMLauncher"') do set "RESTORE=%%b"
-)
+# ---- Restore .ncm default ----
+Write-Host "[3/4] Restoring .ncm file association..."
+# Try to restore from backup
+$backup = (Get-ItemProperty "HKCU:\Software\Classes\.ncm" -Name "OriginalProgID" -ErrorAction SilentlyContinue).OriginalProgID
+if ($backup) {
+    Set-ItemProperty "HKCU:\Software\Classes\.ncm" -Name "(default)" -Value $backup
+    Remove-ItemProperty "HKCU:\Software\Classes\.ncm" -Name "OriginalProgID"
+    Write-Host "  Restored to: $backup"
+} else {
+    Remove-ItemProperty "HKCU:\Software\Classes\.ncm" -Name "(default)"
+    Write-Host "  Cleared custom association"
+}
 
-if not "!RESTORE!"=="" (
-    reg add "HKCU\Software\Classes\.ncm" /ve /d "!RESTORE!" /f >nul 2>&1
-    reg delete "HKCU\Software\Classes\.ncm" /v "OriginalProgID" /f >nul 2>&1
-    reg delete "HKCU\Software\Classes\.ncm" /v "NCMLauncher_OriginalProgID" /f >nul 2>&1
-    echo     Restored to: !RESTORE!
-) else (
-    reg delete "HKCU\Software\Classes\.ncm" /ve /f >nul 2>&1
-    echo     Cleared custom association
-)
+# ---- Remove OpenWithProgids ref ----
+Remove-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.ncm\OpenWithProgids" -Name "NCMLauncher.ncm"
+Write-Host "  Cleaned OpenWithProgids"
 
-:: [d] Remove OpenWithProgids reference
-reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.ncm\OpenWithProgids" /v "NCMLauncher.ncm" /f >nul 2>&1
-echo [d] Removed OpenWithProgids reference
+# ---- Remove startup repair ----
+Write-Host "[4/4] Removing startup auto-repair..."
+$startupDir = [Environment]::GetFolderPath("Startup")
+$startupFile = Join-Path $startupDir "NCM-Hijack-Repair.bat"
+if (Test-Path $startupFile) {
+    Remove-Item $startupFile -Force
+    Write-Host "  Removed: $startupFile"
+} else {
+    Write-Host "  Not found (already removed)"
+}
 
-:: [e] Remove startup auto-repair
-echo [e] Removing startup auto-repair...
-del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\NCM-Hijack-Repair.bat" 2>nul
-echo     Done.
-
-echo.
-echo =============================================
-echo   All changes have been reversed.
-echo   .ncm files will now use the original
-echo   NetEase Cloud Music behavior.
-echo =============================================
-echo.
-echo You can safely delete these files:
-echo   ncm-launcher.ps1
-echo   DropHelper.exe
-echo   DropHelper.cs
-echo   register-handler.bat
-echo   uninstall.bat
-echo.
-pause
-exit /b 0
+Write-Host ""
+Write-Host "============================================"
+Write-Host "  Uninstall Complete"
+Write-Host "============================================"
+Write-Host ""
+Write-Host "  Registry restored to original state."
+Write-Host "  .ncm files will use default Windows behavior."
+Write-Host ""
+Write-Host "  You may now delete the install directory if"
+Write-Host "  you no longer need the files."
+Write-Host ""
+Write-Host "Press any key to exit..."
+$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
