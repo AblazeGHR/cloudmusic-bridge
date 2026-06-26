@@ -1,4 +1,4 @@
-# NCM File Launcher v5 - WM_DROPFILES with logging & retry
+# NCM File Launcher v6 - WM_DROPFILES with optimized waits
 param(
     [Parameter(Mandatory=$true)]
     [string]$FilePath
@@ -91,8 +91,17 @@ if (-not $windowFound) {
     Write-Log "ERROR: Window not found after 20s. Trying DropHelper anyway..."
 }
 
-# Extra wait for full render
-Start-Sleep -Seconds 3
+# Wait for window readiness
+# WM_DROPFILES uses PostMessage (async), so the message will be queued
+# and processed when the window loop is ready — we only need minimal delay.
+if (-not $isRunningBefore) {
+    # Cold start: gave extra time for UI/drop-target init
+    Write-Log "Cold start, waiting 1.5s for full init..."
+    Start-Sleep -Seconds 1.5
+} else {
+    # Warm start: window already processing messages, minimal delay
+    Start-Sleep -Milliseconds 200
+}
 Write-Log "Ready to call DropHelper..."
 
 # Call DropHelper with retries (up to 3 attempts)
