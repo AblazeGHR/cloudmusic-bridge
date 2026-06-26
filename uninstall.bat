@@ -60,6 +60,11 @@ if not "!RESTORE!"=="" (
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.ncm\OpenWithProgids" /v "NCMLauncher.ncm" /f >nul 2>&1
 echo [d] Removed OpenWithProgids reference
 
+:: [e] Remove startup auto-repair
+echo [e] Removing startup auto-repair...
+del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\NCM-Hijack-Repair.bat" 2>nul
+echo     Done.
+
 echo.
 echo =============================================
 echo   All changes have been reversed.
