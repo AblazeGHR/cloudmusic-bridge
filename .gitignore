@@ -1,0 +1,15 @@
+# Build artifacts (keep DropHelper.exe since it's tiny and essential)
+*.pdb
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# PowerShell
+*.log
